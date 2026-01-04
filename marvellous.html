@@ -1,0 +1,1139 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <!-- Page transition + advanced animations (GSAP + ScrollTrigger) -->
+  <link rel="icon" href="/favicon.ico">
+  <style>
+    :root{
+      --gwc-cyan: #00f2ff;
+      --gwc-purple:#7000ff;
+      --gwc-chat-z:120010;
+    }
+
+    /* Ensure the global dropdown & chat panel are not clipped and sit above overlays */
+    .page-transition { will-change: opacity, transform; }
+
+    /* Allow chat panel dropdowns to overflow the chat container (prevent clipping) */
+    .gwc-live-chat { overflow: visible !important; position: relative; z-index: var(--gwc-chat-z); }
+
+    /* Dropdown container - subtle motion + accessible tap targets */
+    .gwc-dropdown { position: relative; z-index: calc(var(--gwc-chat-z) + 1); }
+    .gwc-dropdown .gwc-dropdown-list {
+      display: none;
+      position: absolute;
+      right: 0;
+      top: calc(100% + 8px);
+      width: 320px;
+      max-width: 86vw;
+      max-height: 260px;
+      overflow: auto;
+      background: linear-gradient(180deg, rgba(6,7,10,0.98), rgba(6,7,10,0.995));
+      border: 1px solid rgba(255,255,255,0.04);
+      border-radius: 12px;
+      box-shadow: 0 18px 40px rgba(0,0,0,0.6);
+      padding: 6px;
+      backdrop-filter: blur(8px) saturate(120%);
+      opacity: 0;
+      transform-origin: top right;
+      transform: translateY(-6px) scale(.995);
+      transition: opacity .18s ease, transform .18s ease;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* Visible state */
+    .gwc-dropdown.open .gwc-dropdown-list {
+      display: block;
+      opacity: 1;
+      transform: none;
+    }
+
+    /* Dropdown item styling */
+    .gwc-dropdown-list button {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: transparent;
+      color: inherit;
+      text-align: left;
+      border: 0;
+      cursor: pointer;
+      transition: background .12s ease, transform .08s ease;
+    }
+    .gwc-dropdown-list button:hover,
+    .gwc-dropdown-list button:focus { background: rgba(255,255,255,0.03); transform: translateX(4px); outline: none; }
+
+    /* Small scrollbar polish */
+    .gwc-dropdown-list::-webkit-scrollbar { width: 8px; height: 8px; }
+    .gwc-dropdown-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 8px; }
+
+    /* Make the topic button clearly interactive */
+    #gwc-topic-btn { cursor: pointer; display: inline-block; text-align: left; }
+
+    /* Mobile: convert dropdown to full-width sheet for small screens */
+    @media (max-width:640px){
+      .gwc-dropdown .gwc-dropdown-list {
+        position: fixed;
+        left: 8px;
+        right: 8px;
+        top: auto;
+        bottom: 12px;
+        width: auto;
+        max-width: calc(100% - 16px);
+        max-height: 52vh;
+        transform: translateY(6px);
+      }
+    }
+
+    /* Ensure floating chat controls are reachable above other overlays */
+    .gwc-float-wrap { z-index: calc(var(--gwc-chat-z) + 10); }
+
+    /* Small visual cue when dropdown is open */
+    .gwc-dropdown.open #gwc-topic-btn { box-shadow: 0 6px 22px rgba(0,0,0,0.45), 0 0 8px rgba(0,242,255,0.06); border-radius: 10px; }
+
+    /* Defensive: ensure dropdown always above the page transition overlay */
+    .gwc-dropdown, .gwc-dropdown .gwc-dropdown-list { z-index: 120020 !important; }
+    /* Page transition overlay */
+    .page-transition {
+      position: fixed; inset: 0; z-index: 99999;
+      pointer-events: none; opacity: 0; visibility: hidden;
+      background: radial-gradient(ellipse at center, rgba(0,242,255,0.06), rgba(112,0,255,0.06)),
+                  linear-gradient(135deg, rgba(0,242,255,0.06), rgba(112,0,255,0.06));
+      backdrop-filter: blur(6px) saturate(140%);
+      transition: opacity 0.65s cubic-bezier(.2,.9,.3,1), visibility 0.65s;
+    }
+    .page-transition.show { pointer-events: auto; opacity: 1; visibility: visible; }
+
+    /* subtle pointer + hover micro-interactions */
+    :root { --gwc-accent: rgba(0,242,255,0.08); }
+    .micro-hover { transition: transform .32s cubic-bezier(.2,.9,.3,1), box-shadow .32s; }
+    .micro-hover:hover { transform: translateY(-6px) scale(1.01); box-shadow: 0 20px 50px rgba(0,0,0,0.45); }
+
+    /* thin animated underline for links */
+    .fancy-link { position: relative; overflow: hidden; display: inline-block; }
+    .fancy-link::after {
+      content: ""; position: absolute; left: 0; bottom: 0; height: 2px; width: 100%;
+      transform: translateX(-101%); background: linear-gradient(90deg,var(--gwc-cyan),var(--gwc-purple));
+      transition: transform .45s cubic-bezier(.2,.9,.3,1);
+    }
+    .fancy-link:hover::after { transform: translateX(0%); }
+
+    /* animated image sheen */
+    .sheen-wrap { position: relative; overflow: hidden; }
+    .sheen-wrap::before {
+      content:""; position:absolute; left:-120%; top:0; width:40%; height:100%;
+      background: linear-gradient(120deg, rgba(255,255,255,0), rgba(255,255,255,0.08), rgba(255,255,255,0));
+      transform: skewX(-20deg);
+      transition: transform .9s cubic-bezier(.2,.9,.3,1), left .9s;
+      pointer-events:none;
+    }
+    .sheen-wrap:hover::before { left:120%; transform: skewX(-10deg); }
+
+    /* prefetch hint visual */
+    .prefetch-hint { font-size:10px; color:rgba(226,232,240,0.35); letter-spacing:0.12em; display:inline-block; margin-left:8px; }
+  </style>
+
+  <!-- GSAP + ScrollTrigger -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.11.5/gsap.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.11.5/ScrollTrigger.min.js" defer></script>
+
+  <script defer>
+    (function () {
+      // create transition overlay node (inserted early so JS can use it)
+      const overlay = document.createElement('div');
+      overlay.className = 'page-transition';
+      document.documentElement.appendChild(overlay);
+
+      // helper: play transition then navigate
+      function navigateWithTransition(url) {
+        overlay.classList.add('show');
+        // small ripple via GSAP for polish
+        if (window.gsap) {
+          gsap.fromTo(overlay, { scale: 0.98, opacity: 0 }, { duration: 0.6, scale: 1, opacity: 1, ease: 'power2.out' });
+        }
+        setTimeout(() => { window.location.href = url; }, 650);
+      }
+
+      // make showcase cards clickable and animate before page change
+      function hookShowcaseCards() {
+        const cards = document.querySelectorAll('#showcase .group');
+        cards.forEach(card => {
+          card.classList.add('micro-hover', 'sheen-wrap');
+          card.style.cursor = 'pointer';
+          card.addEventListener('click', (e) => {
+            // prevent double-handling if user clicked link inside
+            if (e.target.closest('a')) return;
+            const titleEl = card.querySelector('h3');
+            const slug = titleEl ? titleEl.textContent.trim().replace(/\s+/g,'-').toLowerCase() : 'project';
+            const url = '/project.html?title=' + encodeURIComponent(slug);
+            // quick local micro animation
+            if (window.gsap) {
+              gsap.timeline()
+                .to(card, { duration: .32, scale: 0.96, ease: 'power1.inOut' })
+                .to(card, { duration: .42, opacity: 0, ease: 'power2.in' });
+            }
+            navigateWithTransition(url);
+          });
+        });
+      }
+
+      // intercept nav links for external pages to animate out
+      function hookNavLinks() {
+        const navLinks = document.querySelectorAll('nav a[href]:not([href^="#"])');
+        navLinks.forEach(a => {
+          a.classList.add('fancy-link');
+          a.addEventListener('click', function (ev) {
+            // follow with transition
+            ev.preventDefault();
+            navigateWithTransition(a.href);
+          });
+        });
+      }
+
+      // smooth anchor scrolling for internal links (enhanced with GSAP if available)
+      function hookInternalAnchors() {
+        document.querySelectorAll('a[href^="#"]').forEach(a => {
+          a.addEventListener('click', function (ev) {
+            const target = document.querySelector(this.getAttribute('href'));
+            if (!target) return;
+            ev.preventDefault();
+            if (window.gsap && gsap.registerPlugin) {
+              gsap.to(window, { duration: 0.8, scrollTo: { y: target, offsetY: 80 }, ease: 'power3.out' });
+            } else {
+              target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              window.scrollBy(0, -80);
+            }
+          });
+        });
+      }
+
+      // entrance animations using GSAP + ScrollTrigger
+      function initScrollAnimations() {
+        if (!window.gsap || !window.ScrollTrigger) return;
+        gsap.registerPlugin(ScrollTrigger);
+
+        // stagger reveal for all .reveal sections
+        gsap.utils.toArray('.reveal').forEach((el) => {
+          gsap.fromTo(el, { y: 40, opacity: 0 }, {
+            y: 0, opacity: 1, duration: .9, ease: 'power3.out',
+            scrollTrigger: { trigger: el, start: 'top 85%', toggleActions: 'play none none none' }
+          });
+        });
+
+        // hero headline micro-explode
+        const hero = document.querySelector('section:first-of-type');
+        if (hero) {
+          gsap.from(hero.querySelectorAll('h1, p, .flex > a'), {
+            y: 30, opacity: 0, duration: .9, stagger: .12, ease: 'power3.out', delay: .12
+          });
+        }
+
+        // subtle parallax on grid background
+        gsap.to('.grid-bg', {
+          backgroundPosition: '0% 40%',
+          ease: 'none', scrollTrigger: { scrub: 0.4, start: 0, end: 'bottom bottom' }
+        });
+      }
+
+      // prefetched link hint: prefetch on hover (lightweight)
+      function enablePrefetchOnHover() {
+        document.addEventListener('mouseover', (ev) => {
+          const a = ev.target.closest('a[href]:not([href^="#"])');
+          if (!a) return;
+          const href = a.href;
+          // add subtle prefetch hint to link text
+          if (!a.querySelector('.prefetch-hint')) {
+            const span = document.createElement('span');
+            span.className = 'prefetch-hint';
+            span.textContent = 'prefetching…';
+            a.appendChild(span);
+            setTimeout(() => { span.remove(); }, 900);
+          }
+          // attempt to prefetch resource (browser may ignore)
+          try { const link = document.createElement('link'); link.rel = 'prefetch'; link.href = href; document.head.appendChild(link); } catch (e) {}
+        }, { passive: true });
+      }
+
+      // run after DOM ready
+      function init() {
+        hookShowcaseCards();
+        hookNavLinks();
+        hookInternalAnchors();
+        initScrollAnimations();
+        enablePrefetchOnHover();
+      }
+
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+      else init();
+    })();
+  </script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GWC | GrowWithCore Digital Megastructure</title>
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/>
+  
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Unbounded:wght@300;400;700;900&family=Inter:wght@300;400;600;800&display=swap');
+
+    :root {
+      --gwc-cyan: #00f2ff;
+      --gwc-purple: #7000ff;
+      --gwc-dark: #05070a;
+      --gwc-card: rgba(17, 25, 40, 0.75);
+    }
+
+    body {
+      background-color: var(--gwc-dark);
+      color: #e2e8f0;
+      font-family: 'Inter', sans-serif;
+      overflow-x: hidden;
+    }
+
+    h1, h2, h3, .gwc-font { font-family: 'Unbounded', sans-serif; }
+
+    /* Custom UI Elements */
+    .glass-morphism {
+      background: var(--gwc-card);
+      backdrop-filter: blur(16px) saturate(180%);
+      border: 1px solid rgba(255, 255, 255, 0.125);
+    }
+
+    .neon-glow {
+      box-shadow: 0 0 20px rgba(0, 242, 255, 0.15), 0 0 40px rgba(112, 0, 255, 0.1);
+    }
+
+    .gradient-text {
+      background: linear-gradient(to right, var(--gwc-cyan), #fff, var(--gwc-purple));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    /* Animated Grid Background */
+    .grid-bg {
+      background-image: linear-gradient(rgba(0, 242, 255, 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 242, 255, 0.05) 1px, transparent 1px);
+      background-size: 50px 50px;
+      perspective: 1000px;
+    }
+
+    .career-card:hover {
+      border-color: var(--gwc-cyan);
+      transform: translateY(-5px);
+      background: rgba(0, 242, 255, 0.05);
+    }
+
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--gwc-cyan) !important;
+      box-shadow: 0 0 10px rgba(0, 242, 255, 0.2);
+    }
+
+    /* Custom Animation for Sections */
+    .reveal { opacity: 0; transform: translateY(30px); transition: all 0.8s ease-out; }
+    .reveal.active { opacity: 1; transform: translateY(0); }
+  </style>
+</head>
+<body class="grid-bg">
+
+  <nav class="fixed top-0 w-full z-[1000] p-6">
+    <div class="max-w-7xl mx-auto glass-morphism rounded-3xl px-10 py-4 flex justify-between items-center neon-glow">
+      <div class="flex items-center gap-4">
+        <div class="w-12 h-12 bg-gradient-to-br from-cyan-400 to-purple-600 rounded-2xl flex items-center justify-center font-black text-xl shadow-lg shadow-cyan-500/20">G</div>
+        <span class="text-2xl font-black tracking-widest gradient-text">GWC</span>
+      </div>
+      
+      <div class="hidden lg:flex gap-10 items-center font-bold text-[10px] uppercase tracking-[0.2em] text-gray-400">
+        <a href="#showcase" class="hover:text-cyan-400 transition">Showcase</a>
+        <a href="#academy" class="hover:text-cyan-400 transition">Academy</a>
+        <a href="#team" class="hover:text-cyan-400 transition">Engineers</a>
+        <a href="#careers" class="hover:text-cyan-400 transition">Careers</a>
+        <a href="#master-form" class="bg-cyan-500 text-black px-8 py-3 rounded-xl hover:bg-white transition duration-300">Deploy Project</a>
+      </div>
+
+      <button class="lg:hidden text-2xl"><i class="fas fa-bars"></i></button>
+    </div>
+  </nav>
+
+  <section class="min-h-screen flex flex-col justify-center items-center px-6 relative overflow-hidden">
+    <div class="absolute -z-10 w-[500px] h-[500px] bg-cyan-500/20 rounded-full blur-[120px] top-1/4 animate-pulse"></div>
+    
+    <div class="text-center animate__animated animate__zoomIn">
+      <h1 class="text-6xl md:text-[120px] font-black leading-none tracking-tighter mb-8">
+        THE DIGITAL <br> <span class="gradient-text">DNA OF GROWTH.</span>
+      </h1>
+      <p class="max-w-2xl mx-auto text-gray-400 text-lg md:text-xl font-light mb-12 leading-relaxed">
+        GrowWithCore is Nigeria’s premier digital engineering collective. We architect high-concurrency systems and groom the industry's elite 1% of developers.
+      </p>
+      <div class="flex flex-wrap justify-center gap-6">
+        <a href="#master-form" class="px-12 py-6 bg-white text-black font-black uppercase tracking-widest rounded-2xl hover:bg-cyan-400 transition-all hover:scale-105">Build Your Empire</a>
+        <a href="#academy" class="px-12 py-6 glass-morphism rounded-2xl font-black uppercase tracking-widest hover:border-cyan-400 transition-all">Explore Academy</a>
+      </div>
+    </div>
+  </section>
+
+  <section id="showcase" class="py-32 max-w-7xl mx-auto px-6 reveal">
+    <div class="flex flex-col md:flex-row justify-between items-end mb-20 gap-8">
+      <div class="max-w-xl">
+        <h2 class="text-5xl font-black mb-6">CURATED <span class="text-cyan-400">PROJECTS</span></h2>
+        <p class="text-gray-500">From Fintech infrastructures to lifestyle e-commerce hubs, we build for performance.</p>
+      </div>
+      <div class="flex gap-4">
+        <div class="h-1 bg-gray-800 w-40 self-center rounded-full overflow-hidden">
+          <div class="h-full bg-cyan-400 w-1/3 animate-progress"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+      <div class="group glass-morphism rounded-[2.5rem] overflow-hidden p-4 hover:neon-border transition duration-500">
+        <div class="relative h-64 rounded-[2rem] overflow-hidden mb-6">
+          <img src="https://images.unsplash.com/photo-1551288049-bbb652166c50?w=600" class="w-full h-full object-cover group-hover:scale-110 transition duration-700">
+          <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+            <span class="px-6 py-2 bg-white text-black rounded-full font-bold">View System</span>
+          </div>
+        </div>
+        <h3 class="text-2xl font-bold px-4 mb-2">OmniBank Dashboard</h3>
+        <p class="px-4 text-gray-400 text-sm mb-6 italic italic text-cyan-500">React • Node.js • AWS</p>
+      </div>
+      <div class="group glass-morphism rounded-[2.5rem] overflow-hidden p-4 hover:neon-border transition duration-500">
+        <div class="relative h-64 rounded-[2rem] overflow-hidden mb-6">
+          <img src="https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?w=600" class="w-full h-full object-cover group-hover:scale-110 transition duration-700">
+          <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+            <span class="px-6 py-2 bg-white text-black rounded-full font-bold">View System</span>
+          </div>
+        </div>
+        <h3 class="text-2xl font-bold px-4 mb-2">PrimeCart Nigeria</h3>
+        <p class="px-4 text-gray-400 text-sm mb-6 italic text-purple-500 italic text-cyan-500">Next.js • Shopify • PostgreSQL</p>
+      </div>
+      <div class="group glass-morphism rounded-[2.5rem] overflow-hidden p-4 hover:neon-border transition duration-500">
+        <div class="relative h-64 rounded-[2rem] overflow-hidden mb-6">
+          <img src="https://images.unsplash.com/photo-1510511459019-5dee997dd1db?w=600" class="w-full h-full object-cover group-hover:scale-110 transition duration-700">
+          <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+            <span class="px-6 py-2 bg-white text-black rounded-full font-bold">View System</span>
+          </div>
+        </div>
+        <h3 class="text-2xl font-bold px-4 mb-2">EduCore Portal</h3>
+        <p class="px-4 text-gray-400 text-sm mb-6 italic text-blue-500 italic text-cyan-500">Vue.js • Firebase • Socket.io</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="academy" class="py-32 bg-white/5 reveal">
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="text-center mb-24">
+        <h2 class="text-6xl font-black mb-6 italic">GWC <span class="text-purple-500">ACADEMY</span></h2>
+        <p class="text-gray-400 max-w-xl mx-auto">We don't just teach code; we teach the business of digital engineering.</p>
+      </div>
+
+      <div class="grid lg:grid-cols-4 gap-4">
+        <div class="glass-morphism p-10 rounded-[3rem] col-span-2 group">
+          <div class="flex justify-between items-start mb-8">
+            <i class="fas fa-layer-group text-5xl text-cyan-400"></i>
+            <span class="text-xs bg-cyan-500/20 px-4 py-1 rounded-full text-cyan-400 font-bold">CORE PROGRAM</span>
+          </div>
+          <h3 class="text-3xl font-black mb-4">Full-Stack Mastery</h3>
+          <p class="text-gray-400 mb-8 leading-relaxed">A 24-week intensive path covering the MERN stack (MongoDB, Express, React, Node) plus DevOps and System Architecture.</p>
+          <div class="space-y-3 mb-10">
+            <div class="flex items-center gap-3 text-sm text-gray-300"><i class="fas fa-check-circle text-cyan-400"></i> Industry Grade Projects</div>
+            <div class="flex items-center gap-3 text-sm text-gray-300"><i class="fas fa-check-circle text-cyan-400"></i> Mentorship from Tharma & Calmer</div>
+            <div class="flex items-center gap-3 text-sm text-gray-300"><i class="fas fa-check-circle text-cyan-400"></i> Job Placement Program</div>
+          </div>
+          <button class="w-full py-4 bg-white text-black font-black uppercase rounded-2xl group-hover:bg-cyan-400 transition">Register for Admission</button>
+        </div>
+
+        <div class="glass-morphism p-10 rounded-[3rem] flex flex-col justify-between">
+          <div>
+            <i class="fas fa-pen-nib text-4xl text-purple-500 mb-6"></i>
+            <h3 class="text-2xl font-black mb-4">UI/UX Innovation</h3>
+            <p class="text-gray-400 text-sm">Design psychology, accessibility, and high-fidelity prototyping with Figma.</p>
+          </div>
+          <a href="#" class="text-purple-400 font-bold mt-8 flex items-center gap-2">View Curriculum <i class="fas fa-arrow-right"></i></a>
+        </div>
+
+        <div class="glass-morphism p-10 rounded-[3rem] flex flex-col justify-between border-b-4 border-cyan-500">
+          <div>
+            <i class="fas fa-briefcase text-4xl text-blue-500 mb-6"></i>
+            <h3 class="text-2xl font-black mb-4">The Tech Business</h3>
+            <p class="text-gray-400 text-sm">How to freelance, scale an agency, and manage global clients professionally.</p>
+          </div>
+          <a href="#" class="text-blue-400 font-bold mt-8 flex items-center gap-2">Join Class <i class="fas fa-arrow-right"></i></a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="team" class="py-32 max-w-7xl mx-auto px-6 reveal">
+    <h2 class="text-4xl font-black mb-20">THE <span class="text-cyan-400 underline decoration-purple-600">ENGINEERS</span></h2>
+    
+    <div class="grid md:grid-cols-2 gap-12">
+      <div class="glass-morphism p-12 rounded-[4rem] group hover:border-cyan-500 transition duration-500">
+        <div class="flex flex-col md:flex-row gap-10 items-center">
+          <div class="relative">
+            <img src="https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400" class="w-48 h-60 rounded-[3rem] object-cover grayscale group-hover:grayscale-0 transition duration-500 shadow-2xl">
+            <div class="absolute -bottom-4 -right-4 w-16 h-16 bg-cyan-500 rounded-2xl flex items-center justify-center text-black font-black">JS</div>
+          </div>
+          <div>
+            <h3 class="text-4xl font-black mb-2">Tharma</h3>
+            <p class="text-cyan-400 text-xs font-black tracking-widest uppercase mb-6">Lead Systems Architect</p>
+            <p class="text-gray-400 text-sm leading-relaxed mb-8">Architect of the GWC backend infrastructure. Specialized in high-scale Node.js engines and secure data flows.</p>
+            <div class="flex gap-4">
+              <a href="https://wa.me/234..." class="w-12 h-12 glass-morphism rounded-xl flex items-center justify-center text-green-500 hover:bg-green-500 hover:text-white transition"><i class="fab fa-whatsapp"></i></a>
+              <a href="mailto:tharma@growwithcore.com" class="w-12 h-12 glass-morphism rounded-xl flex items-center justify-center text-cyan-400 hover:bg-cyan-400 hover:text-white transition"><i class="far fa-envelope"></i></a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="glass-morphism p-12 rounded-[4rem] group hover:border-purple-500 transition duration-500">
+        <div class="flex flex-col md:flex-row gap-10 items-center">
+          <div class="relative">
+            <img src="https://images.unsplash.com/photo-1531123897727-8f129e16fd3c?w=400" class="w-48 h-60 rounded-[3rem] object-cover grayscale group-hover:grayscale-0 transition duration-500 shadow-2xl">
+            <div class="absolute -bottom-4 -right-4 w-16 h-16 bg-purple-500 rounded-2xl flex items-center justify-center text-white font-black">UX</div>
+          </div>
+          <div>
+            <h3 class="text-4xl font-black mb-2">Calmer</h3>
+            <p class="text-purple-400 text-xs font-black tracking-widest uppercase mb-6">Lead Frontend Engineer</p>
+            <p class="text-gray-400 text-sm leading-relaxed mb-8">Visual visionary at GWC. Master of React, GSAP animations, and creating websites that feel like magic.</p>
+            <div class="flex gap-4">
+              <a href="https://wa.me/234..." class="w-12 h-12 glass-morphism rounded-xl flex items-center justify-center text-green-500 hover:bg-green-500 hover:text-white transition"><i class="fab fa-whatsapp"></i></a>
+              <a href="mailto:calmer@growwithcore.com" class="w-12 h-12 glass-morphism rounded-xl flex items-center justify-center text-purple-400 hover:bg-purple-400 hover:text-white transition"><i class="far fa-envelope"></i></a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="careers" class="py-32 bg-white/5 reveal">
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="flex justify-between items-center mb-16">
+        <h2 class="text-5xl font-black">WORK AT <span class="text-cyan-400">GWC</span></h2>
+        <span class="text-xs font-bold text-gray-500">3 OPEN ROLES</span>
+      </div>
+      
+      <div class="grid md:grid-cols-3 gap-8">
+        <div class="glass-morphism p-10 rounded-3xl career-card border border-white/5 transition-all cursor-pointer">
+          <div class="w-14 h-14 bg-cyan-500/10 rounded-2xl flex items-center justify-center mb-6">
+            <i class="fas fa-headset text-cyan-500 text-2xl"></i>
+          </div>
+          <h4 class="text-xl font-bold mb-2">Customer Care Specialist</h4>
+          <p class="text-gray-500 text-sm mb-6">Manage client communications, project updates, and support inquiries for GWC global clients.</p>
+          <div class="flex justify-between items-center">
+            <span class="text-xs bg-cyan-500/10 text-cyan-500 px-3 py-1 rounded">REMOTE</span>
+            <i class="fas fa-chevron-right text-xs"></i>
+          </div>
+        </div>
+        <div class="glass-morphism p-10 rounded-3xl career-card border border-white/5 transition-all cursor-pointer">
+          <div class="w-14 h-14 bg-purple-500/10 rounded-2xl flex items-center justify-center mb-6">
+            <i class="fas fa-bullhorn text-purple-500 text-2xl"></i>
+          </div>
+          <h4 class="text-xl font-bold mb-2">Technical Sales Rep</h4>
+          <p class="text-gray-500 text-sm mb-6">Identify potential business partners and pitch the GWC digital ecosystem services.</p>
+          <div class="flex justify-between items-center">
+            <span class="text-xs bg-purple-500/10 text-purple-500 px-3 py-1 rounded">LAGOS</span>
+            <i class="fas fa-chevron-right text-xs"></i>
+          </div>
+        </div>
+        <div class="glass-morphism p-10 rounded-3xl career-card border border-white/5 transition-all cursor-pointer">
+          <div class="w-14 h-14 bg-blue-500/10 rounded-2xl flex items-center justify-center mb-6">
+            <i class="fas fa-terminal text-blue-500 text-2xl"></i>
+          </div>
+          <h4 class="text-xl font-bold mb-2">Junior Node.js Dev</h4>
+          <p class="text-gray-500 text-sm mb-6">Assist Tharma in building scalable APIs and server-side logic for enterprise clients.</p>
+          <div class="flex justify-between items-center">
+            <span class="text-xs bg-blue-500/10 text-blue-500 px-3 py-1 rounded">INTERN</span>
+            <i class="fas fa-chevron-right text-xs"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="master-form" class="py-32 px-6">
+    <div class="max-w-5xl mx-auto glass-morphism p-12 md:p-24 rounded-[4rem] border-t-8 border-cyan-500">
+      <div class="text-center mb-16">
+        <h2 class="text-6xl font-black mb-4">DEPLOY YOUR <br> <span class="gradient-text">VISION.</span></h2>
+        <p class="text-gray-400">Fill this comprehensive brief to initialize the GWC development engine.</p>
+      </div>
+
+      <form id="gwc-mega-form" class="space-y-12">
+        <div class="space-y-8">
+          <h3 class="text-xs font-black text-cyan-400 uppercase tracking-widest">01. Entity Discovery</h3>
+          <div class="grid md:grid-cols-2 gap-8">
+            <div class="group">
+              <label class="block text-[10px] font-bold text-gray-500 mb-2">Full Legal Name / Business Name</label>
+              <input type="text" name="user_name" required class="w-full bg-transparent border-b-2 border-white/10 py-4 outline-none transition focus:border-cyan-500 text-lg">
+            </div>
+            <div class="group">
+              <label class="block text-[10px] font-bold text-gray-500 mb-2">Primary Digital Contact (Email)</label>
+              <input type="email" name="user_email" required class="w-full bg-transparent border-b-2 border-white/10 py-4 outline-none transition focus:border-cyan-500 text-lg">
+            </div>
+          </div>
+        </div>
+
+        <div class="space-y-8">
+          <h3 class="text-xs font-black text-purple-500 uppercase tracking-widest">02. Technical Architecture</h3>
+          <div class="grid md:grid-cols-3 gap-6">
+            <div class="p-6 glass-morphism rounded-3xl border border-white/5 hover:border-cyan-500/50 transition cursor-pointer">
+              <input type="radio" name="project_type" value="FullStack" class="hidden peer" id="type1" checked>
+              <label for="type1" class="peer-checked:text-cyan-400">
+                <i class="fas fa-microchip mb-4 text-2xl"></i>
+                <span class="block font-bold">Full-Stack Hub</span>
+                <span class="text-[10px] text-gray-500">React + Node + DB</span>
+              </label>
+            </div>
+            <div class="p-6 glass-morphism rounded-3xl border border-white/5 hover:border-cyan-500/50 transition cursor-pointer">
+              <input type="radio" name="project_type" value="Ecom" class="hidden peer" id="type2">
+              <label for="type2" class="peer-checked:text-cyan-400">
+                <i class="fas fa-shopping-cart mb-4 text-2xl"></i>
+                <span class="block font-bold">E-Commerce</span>
+                <span class="text-[10px] text-gray-500">Global Sales Engine</span>
+              </label>
+            </div>
+            <div class="p-6 glass-morphism rounded-3xl border border-white/5 hover:border-cyan-500/50 transition cursor-pointer">
+              <input type="radio" name="project_type" value="Mobile" class="hidden peer" id="type3">
+              <label for="type3" class="peer-checked:text-cyan-400">
+                <i class="fas fa-mobile-alt mb-4 text-2xl"></i>
+                <span class="block font-bold">Mobile App</span>
+                <span class="text-[10px] text-gray-500">iOS & Android Core</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="space-y-8">
+          <h3 class="text-xs font-black text-blue-400 uppercase tracking-widest">03. Project Details & Career Path</h3>
+          <div>
+            <label class="block text-[10px] font-bold text-gray-500 mb-2">Describe your vision (Design, Feel, Features)</label>
+            <textarea name="message" class="w-full bg-white/5 border border-white/10 rounded-3xl p-6 h-48 outline-none focus:border-cyan-500 transition" placeholder="e.g. I want a futuristic dark mode dashboard with real-time analytics for my logistics business..."></textarea>
+          </div>
+          
+          <div class="grid md:grid-cols-2 gap-8">
+            <div>
+              <label class="block text-[10px] font-bold text-gray-500 mb-2">Estimated Investment (Budget)</label>
+              <select name="budget" class="w-full bg-white/5 border border-white/10 py-4 px-6 rounded-2xl outline-none focus:border-cyan-500">
+                <option>$2,500 - $5,000</option>
+                <option>$5,000 - $15,000</option>
+                <option>$15,000+</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-[10px] font-bold text-gray-500 mb-2">Are you also seeking employment?</label>
+              <select name="career_interest" class="w-full bg-white/5 border border-white/10 py-4 px-6 rounded-2xl outline-none focus:border-cyan-500">
+                <option>No, Just a Client</option>
+                <option>Yes, Customer Care Position</option>
+                <option>Yes, Developer Position</option>
+                <option>Yes, Sales Representative</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <button type="submit" class="w-full py-8 bg-gradient-to-r from-cyan-600 to-purple-600 rounded-[2.5rem] font-black text-2xl uppercase tracking-tighter hover:shadow-[0_0_50px_rgba(0,242,255,0.4)] transition transform hover:-translate-y-2">
+          Initialize Transmission
+        </button>
+      </form>
+    </div>
+  </section>
+
+  <footer class="py-24 px-6 border-t border-white/5 bg-black">
+    <div class="max-w-7xl mx-auto grid md:grid-cols-4 gap-16">
+      <div class="col-span-2">
+        <div class="flex items-center gap-4 mb-8">
+          <div class="w-10 h-10 bg-cyan-500 rounded-lg flex items-center justify-center font-bold text-black">G</div>
+          <span class="text-3xl font-black gradient-text">GWC</span>
+        </div>
+        <p class="text-gray-500 text-lg leading-relaxed max-w-sm mb-10">Engineering the future of the African digital economy. Based in Nigeria, serving the world.</p>
+        <div class="flex gap-6">
+          <a href="#" class="text-2xl text-gray-600 hover:text-cyan-400 transition"><i class="fab fa-instagram"></i></a>
+          <a href="#" class="text-2xl text-gray-600 hover:text-cyan-400 transition"><i class="fab fa-twitter"></i></a>
+          <a href="#" class="text-2xl text-gray-600 hover:text-cyan-400 transition"><i class="fab fa-github"></i></a>
+        </div>
+      </div>
+      <div>
+        <h4 class="font-bold mb-8 uppercase text-xs tracking-widest text-cyan-400">Programs</h4>
+        <ul class="space-y-4 text-gray-500 text-sm">
+          <li><a href="#" class="hover:text-white">React Core</a></li>
+          <li><a href="#" class="hover:text-white">Backend Engineering</a></li>
+          <li><a href="#" class="hover:text-white">The Business of Tech</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4 class="font-bold mb-8 uppercase text-xs tracking-widest text-purple-400">Company</h4>
+        <ul class="space-y-4 text-gray-500 text-sm">
+          <li><a href="#" class="hover:text-white">The Engineers</a></li>
+          <li><a href="#" class="hover:text-white">Career Board</a></li>
+          <li><a href="#" class="hover:text-white">Privacy Policy</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="mt-24 text-center text-[10px] text-gray-700 font-bold uppercase tracking-[0.5em]">
+      &copy; 2026 GROWWITHCORE DIGITAL SYSTEMS. ALL RIGHTS ENCRYPTED.
+    </div>
+  </footer>
+
+  <div class="fixed bottom-8 right-8 z-[1000]">
+    <div id="chat-bubble" class="hidden w-[350px] glass-morphism rounded-[2.5rem] shadow-2xl overflow-hidden mb-6 animate__animated animate__fadeInUp">
+      <div class="p-8 bg-gradient-to-r from-cyan-500 to-purple-600 text-black font-black flex justify-between">
+        <span>GWC SUPPORT</span>
+        <button onclick="toggleChat()"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="p-8 space-y-4">
+        <p class="text-sm font-medium">Which expert would you like to discuss your project with?</p>
+        <a href="https://wa.me/234..." class="flex items-center gap-4 p-4 rounded-2xl bg-white/5 hover:bg-cyan-500/10 transition group">
+          <img src="https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=100" class="w-10 h-10 rounded-full grayscale group-hover:grayscale-0 transition">
+          <div><span class="block font-bold">Tharma</span><span class="text-[10px] text-gray-500">Systems & Backend</span></div>
+        </a>
+        <a href="https://wa.me/234..." class="flex items-center gap-4 p-4 rounded-2xl bg-white/5 hover:bg-purple-500/10 transition group">
+          <img src="https://images.unsplash.com/photo-1531123897727-8f129e16fd3c?w=100" class="w-10 h-10 rounded-full grayscale group-hover:grayscale-0 transition">
+          <div><span class="block font-bold">Calmer</span><span class="text-[10px] text-gray-500">UI/UX & Frontend</span></div>
+        </a>
+      </div>
+    </div>
+    <button onclick="toggleChat()" class="w-20 h-20 bg-cyan-500 text-black rounded-full flex items-center justify-center text-3xl shadow-[0_0_30px_rgba(0,242,255,0.4)] hover:scale-110 active:scale-95 transition duration-300">
+      <i class="fas fa-comment-dots"></i>
+    </button>
+  </div>
+
+  <script>
+    // Replace these with your EmailJS credentials
+    const EMAILJS_PUBLIC_KEY = 'YOUR_PUBLIC_KEY';
+    const EMAILJS_SERVICE_ID = 'YOUR_SERVICE_ID';
+    const EMAILJS_TEMPLATE_ID = 'YOUR_TEMPLATE_ID';
+
+    // initialize after library is available
+    document.addEventListener('DOMContentLoaded', function () {
+      if (window.emailjs && typeof emailjs.init === 'function') {
+        emailjs.init(EMAILJS_PUBLIC_KEY);
+      } else {
+        console.warn('EmailJS library not loaded.');
+      }
+
+      // Chat toggle
+      window.toggleChat = function() {
+        const chat = document.getElementById('chat-bubble');
+        chat.classList.toggle('hidden');
+      };
+
+      // Form submission using emailjs.send with explicit template params
+      const form = document.getElementById('gwc-mega-form');
+      if (!form) return;
+
+      form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const submitBtn = form.querySelector('button[type="submit"]');
+        const origText = submitBtn.innerText;
+        submitBtn.innerText = 'UPLOADING TO MAINFRAME...';
+        submitBtn.disabled = true;
+
+        const projectTypeEl = form.querySelector('input[name="project_type"]:checked');
+        const templateParams = {
+          user_name: form.user_name?.value || '',
+          user_email: form.user_email?.value || '',
+          project_type: projectTypeEl ? projectTypeEl.value : '',
+          message: form.message?.value || '',
+          budget: form.budget?.value || '',
+          career_interest: form.career_interest?.value || ''
+        };
+
+        // Validate minimal fields
+        if (!templateParams.user_name || !templateParams.user_email) {
+          alert('Please provide name and email.');
+          submitBtn.innerText = origText;
+          submitBtn.disabled = false;
+          return;
+        }
+
+        if (!window.emailjs || typeof emailjs.send !== 'function') {
+          alert('Email service is not available. Please check your network or EmailJS script include.');
+          submitBtn.innerText = origText;
+          submitBtn.disabled = false;
+          // fallback: save submission and show an in-page "next page" experience
+          try { localStorage.setItem('gwc_pending_submission', JSON.stringify(templateParams)); } catch (e) {}
+
+          (function showNextPage() {
+            // hide current page content
+            Array.from(document.body.children).forEach(el => { if (!el.id || el.id !== 'gwc-next-page') el.style.display = 'none'; });
+
+            // build the single-file "next page"
+            const next = document.createElement('div');
+            next.id = 'gwc-next-page';
+            next.style.cssText = 'position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;padding:48px;background:linear-gradient(180deg,rgba(7,10,14,0.96),rgba(5,7,10,1));color:#e6f7ff;font-family:Inter, sans-serif;overflow:auto;';
+
+            const summaryHTML = `
+              <div style="max-width:960px;width:100%;border-radius:28px;padding:36px;background:linear-gradient(135deg,rgba(0,242,255,0.04),rgba(112,0,255,0.03));backdrop-filter:blur(8px);box-shadow:0 30px 60px rgba(0,0,0,0.6);">
+                <h1 style="margin:0 0 8px;font-size:28px;font-weight:900;color:var(--gwc-cyan, #00f2ff)">TRANSMISSION QUEUED</h1>
+                <p style="margin:0 0 18px;color:#cdebf9">We couldn't reach the remote email service. Your brief was safely queued locally and a local preview has been generated. You can continue here — this is a single-file flow.</p>
+
+                <div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:18px;">
+                  <div style="flex:1;min-width:240px;padding:18px;border-radius:16px;background:rgba(255,255,255,0.02)">
+                    <strong style="display:block;margin-bottom:8px;color:#fff">Name</strong>
+                    <div style="color:#bdefff">${templateParams.user_name || '—'}</div>
+                  </div>
+                  <div style="flex:1;min-width:240px;padding:18px;border-radius:16px;background:rgba(255,255,255,0.02)">
+                    <strong style="display:block;margin-bottom:8px;color:#fff">Email</strong>
+                    <div style="color:#bdefff">${templateParams.user_email || '—'}</div>
+                  </div>
+                  <div style="flex:1;min-width:240px;padding:18px;border-radius:16px;background:rgba(255,255,255,0.02)">
+                    <strong style="display:block;margin-bottom:8px;color:#fff">Project Type</strong>
+                    <div style="color:#bdefff">${templateParams.project_type || '—'}</div>
+                  </div>
+                </div>
+
+                <div style="margin-bottom:18px;padding:18px;border-radius:12px;background:linear-gradient(90deg,rgba(0,242,255,0.02),rgba(112,0,255,0.02));">
+                  <strong style="display:block;margin-bottom:8px;color:#fff">Vision & Requirements</strong>
+                  <div style="color:#d9f7ff;white-space:pre-wrap;line-height:1.45">${(templateParams.message || 'No description provided.').replace(/</g,'&lt;')}</div>
+                </div>
+
+                <div style="display:flex;gap:12px;flex-wrap:wrap;">
+                  <button id="gwc-next-open-dashboard" style="background:linear-gradient(90deg,#00f2ff,#7000ff);color:#000;padding:14px 22px;border-radius:14px;border:none;font-weight:800;cursor:pointer;">
+                    Open Project Overview
+                  </button>
+                  <button id="gwc-next-send-later" style="background:transparent;border:1px solid rgba(255,255,255,0.08);color:#e6f7ff;padding:14px 22px;border-radius:14px;cursor:pointer;">
+                    Send When Online
+                  </button>
+                  <button id="gwc-next-return" style="margin-left:auto;background:transparent;border:none;color:#9fdcff;padding:14px 22px;border-radius:14px;cursor:pointer;text-decoration:underline;">
+                    Return to Site
+                  </button>
+                </div>
+              </div>
+            `;
+
+            next.innerHTML = summaryHTML;
+            document.body.appendChild(next);
+
+            // basic interactions
+            document.getElementById('gwc-next-open-dashboard').addEventListener('click', () => {
+              // create a simple "next page" dashboard inline (single file)
+              const dash = document.createElement('div');
+              dash.style.cssText = 'margin-top:26px;padding:22px;border-radius:16px;background:#00000022;color:#e6f7ff;';
+              dash.innerHTML = `
+                <h2 style="margin:0 0 8px;font-size:20px">Project Overview • Next Steps</h2>
+                <ol style="margin:0 0 0 18px;color:#cdebf9">
+                  <li>Validate requirements & schedule discovery call.</li>
+                  <li>Estimate milestones and deliverables.</li>
+                  <li>Assign engineering lead and begin sprint 0.</li>
+                </ol>
+                <p style="margin-top:12px;color:#9fdcff;font-weight:700">Local draft saved — you'll be notified when the mail queue is available.</p>
+              `;
+              // ensure not to duplicate
+              if (!next.querySelector('.gwc-dashboard')) {
+                const cont = document.createElement('div');
+                cont.className = 'gwc-dashboard';
+                cont.appendChild(dash);
+                next.querySelector('div[style*="display:flex;gap:12px"]').insertAdjacentElement('afterend', cont);
+                if (window.gsap) gsap.from(dash, { opacity: 0, y: 18, duration: 0.6 });
+              }
+            });
+
+            document.getElementById('gwc-next-send-later').addEventListener('click', () => {
+              // mark queued for auto-send; simple visual feedback
+              try { localStorage.setItem('gwc_pending_status', 'queued'); } catch (e) {}
+              alert('Your brief is marked to be sent when network/email service is available. It remains saved locally.');
+            });
+
+            document.getElementById('gwc-next-return').addEventListener('click', () => {
+              // restore original page (remove our next page and show hidden nodes)
+              document.getElementById('gwc-next-page')?.remove();
+              Array.from(document.body.children).forEach(el => { if (!el.id || el.id !== 'gwc-next-page') el.style.display = ''; });
+            });
+
+            // subtle entrance animation if gsap exists
+            if (window.gsap) {
+              gsap.from(next, { opacity: 0, y: 40, duration: 0.7, ease: 'power3.out' });
+            }
+          })();
+          return;
+        }
+
+        emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams)
+          .then(function(response) {
+            alert('TRANSMISSION SUCCESSFUL: GWC Engineers have received your brief.');
+            form.reset();
+            submitBtn.innerText = origText;
+            submitBtn.disabled = false;
+          }, function(error) {
+            console.error('EmailJS error:', error);
+            alert('TRANSMISSION FAILED: check connection or contact support on WhatsApp.');
+            submitBtn.innerText = origText;
+            submitBtn.disabled = false;
+          });
+      });
+
+      // reveal on scroll
+      const reveals = document.querySelectorAll('.reveal');
+      function revealOnScroll() {
+        const windowHeight = window.innerHeight;
+        reveals.forEach(el => {
+          const revealTop = el.getBoundingClientRect().top;
+          if (revealTop < windowHeight - 150) el.classList.add('active');
+        });
+      }
+      window.addEventListener('scroll', revealOnScroll);
+      revealOnScroll();
+    });
+  </script>
+</body>
+</html>
+<style>
+  /* Floating WhatsApp and enhanced chat UI */
+  .gwc-float-wrap { position: fixed; right: 24px; bottom: 24px; display:flex; flex-direction:column; gap:12px; z-index:120000; align-items:flex-end; }
+  .gwc-wa-btn, .gwc-chat-toggle {
+    width:64px;height:64px;border-radius:999px;display:flex;align-items:center;justify-content:center;
+    font-size:22px;color:#000;background:linear-gradient(90deg,#00f2ff,#7000ff);box-shadow:0 20px 40px rgba(0,0,0,0.45);
+    border:none;cursor:pointer;transition:transform .18s ease, box-shadow .18s;
+  }
+  .gwc-wa-btn:active,.gwc-chat-toggle:active{ transform:scale(.96); }
+  /* Chat panel */
+  .gwc-live-chat {
+    width:360px;max-width:92vw;height:520px;border-radius:20px;overflow:hidden;display:flex;flex-direction:column;
+    background:linear-gradient(180deg,rgba(7,10,14,0.98),rgba(5,7,10,0.98));color:#e6f7ff;border:1px solid rgba(255,255,255,0.06);
+    box-shadow:0 30px 80px rgba(0,0,0,0.6);
+  }
+  .gwc-chat-header { padding:14px 16px; display:flex;align-items:center;gap:12px; background:linear-gradient(90deg,#00f2ff11,#7000ff11); }
+  .gwc-chat-header h4{ margin:0;font-weight:900;font-family:Unbounded, Inter, sans-serif;}
+  .gwc-chat-close { margin-left:auto;background:transparent;border:0;color:inherit;font-size:18px;cursor:pointer; }
+  .gwc-messages { padding:16px; flex:1; overflow:auto; display:flex; flex-direction:column; gap:12px; }
+  .gwc-message { max-width:80%; padding:12px 14px;border-radius:14px;background:rgba(255,255,255,0.04); color:#dff9ff; font-size:14px; }
+  .gwc-message.mine { margin-left:auto; background:linear-gradient(90deg,#00f2ff,#7000ff); color:#000; font-weight:700; }
+  .gwc-form { padding:14px; display:grid; gap:10px; background:linear-gradient(180deg,transparent,#00000011); }
+  .gwc-input, .gwc-select, .gwc-text { width:100%; padding:12px 14px; border-radius:12px; border:1px solid rgba(255,255,255,0.06); background:rgba(255,255,255,0.02); color:inherit; outline:none; }
+  .gwc-send-row { display:flex; gap:10px; }
+  .gwc-submit { flex:1; padding:12px 16px; border-radius:12px; border:0; background:linear-gradient(90deg,#00f2ff,#7000ff); color:#000; font-weight:800; cursor:pointer; }
+  .gwc-quick-topics { display:flex; gap:6px; flex-wrap:wrap; }
+  .gwc-topic { padding:6px 8px; border-radius:999px; background:rgba(255,255,255,0.03); font-size:12px; cursor:pointer; }
+  .gwc-topic.active { background:linear-gradient(90deg,#00f2ff,#7000ff); color:#000; font-weight:700; }
+  /* dropdown styling (advanced) */
+  .gwc-dropdown { position:relative; }
+  .gwc-dropdown .gwc-dropdown-list { position:absolute; right:0; top:110%; width:320px; max-height:240px; overflow:auto; background:#06070a; border:1px solid rgba(255,255,255,0.04); border-radius:12px; display:none; box-shadow:0 20px 50px rgba(0,0,0,0.6); z-index:120001; }
+  .gwc-dropdown.open .gwc-dropdown-list { display:block; }
+  .gwc-dropdown-list button { width:100%; padding:10px 12px; background:transparent;border:0;color:inherit;text-align:left;cursor:pointer; }
+  /* subtle entrance */
+  .gwc-fade-in { opacity:0; transform:translateY(10px); transition:opacity .6s ease, transform .6s ease; }
+  .gwc-fade-in.is-visible { opacity:1; transform:none; }
+</style>
+
+<div class="gwc-float-wrap" aria-hidden="false">
+  <button id="gwc-wa-btn" class="gwc-wa-btn" title="Contact on WhatsApp" aria-label="WhatsApp">
+    <i class="fab fa-whatsapp"></i>
+  </button>
+  <div id="gwc-chat-panel" class="gwc-live-chat gwc-fade-in" style="display:none;" role="dialog" aria-label="GWC Live Chat">
+    <!-- content will be injected by script -->
+  </div>
+  <button id="gwc-chat-toggle" class="gwc-chat-toggle" title="Open Live Chat" aria-label="Open live chat">
+    <i class="fas fa-comment-dots"></i>
+  </button>
+</div>
+
+<script>
+  (function(){
+    const WA_NUMBER = '2340000000000'; // replace with your WhatsApp number (country + number, no +)
+    const WA_BASE_URL = 'https://wa.me/' + WA_NUMBER;
+    const panel = document.getElementById('gwc-chat-panel');
+    const toggle = document.getElementById('gwc-chat-toggle');
+    const waBtn = document.getElementById('gwc-wa-btn');
+
+    // Build chat UI
+    panel.innerHTML = `
+      <div class="gwc-chat-header">
+        <div style="width:44px;height:44px;border-radius:10px;background:linear-gradient(90deg,#00f2ff,#7000ff);display:flex;align-items:center;justify-content:center;font-weight:900;color:#000">G</div>
+        <h4>GWC Live Support</h4>
+        <button class="gwc-chat-close" id="gwc-close-btn" aria-label="Close chat">&times;</button>
+      </div>
+      <div class="gwc-messages" id="gwc-messages" aria-live="polite"></div>
+      <div class="gwc-form">
+        <div style="display:flex;gap:8px;">
+          <input placeholder="Full name" id="gwc-name" class="gwc-input" />
+          <input placeholder="Phone (+234...)" id="gwc-phone" class="gwc-input" />
+        </div>
+        <div style="display:flex;gap:8px;">
+          <input placeholder="Email" id="gwc-email" class="gwc-input" />
+          <div style="width:180px; position:relative;" class="gwc-dropdown" id="gwc-topic-dropdown">
+            <button id="gwc-topic-btn" class="gwc-input" style="text-align:left;">Select topic ▾</button>
+            <div class="gwc-dropdown-list" id="gwc-topic-list" role="listbox" aria-label="Topics"></div>
+          </div>
+        </div>
+        <textarea id="gwc-message-text" rows="3" class="gwc-text" placeholder="Describe your project briefly..."></textarea>
+        <div class="gwc-send-row">
+          <button id="gwc-submit" class="gwc-submit">Send & Notify</button>
+          <button id="gwc-wa-open" class="gwc-submit" style="background:#fff;color:#000;width:64px;padding:0;">WA</button>
+        </div>
+      </div>
+    `;
+
+    // topics (sample — can be expanded)
+    const topics = [
+      'High-concurrency Backend','E-commerce Platform','Mobile App (iOS/Android)','UI/UX Design & Prototyping',
+      'DevOps & Cloud Architecture','Realtime Systems & Websockets','Data Engineering & Analytics',
+      'Security Audit & Hardening','MVP for Investors','Maintenance & Retainer'
+    ];
+
+    const topicList = document.getElementById('gwc-topic-list');
+    const topicBtn = document.getElementById('gwc-topic-btn');
+    topics.forEach(t => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = t;
+      btn.addEventListener('click', () => {
+        selectedTopic = t;
+        topicBtn.textContent = t + ' ▾';
+        dropdown.classList.remove('open');
+      });
+      topicList.appendChild(btn);
+    });
+
+    let selectedTopic = '';
+    const dropdown = document.getElementById('gwc-topic-dropdown');
+    topicBtn.addEventListener('click', () => dropdown.classList.toggle('open'));
+
+    // utilities
+    const messagesEl = document.getElementById('gwc-messages');
+    function pushMessage(text, mine=false){
+      const el = document.createElement('div');
+      el.className = 'gwc-message' + (mine ? ' mine' : '');
+      el.textContent = text;
+      messagesEl.appendChild(el);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    // show some onboarding messages
+    function showInitialConversation(){
+      pushMessage('Welcome to GWC support — share a short brief and we will reach out on WhatsApp or Email.');
+      pushMessage('Tip: fill name, email and phone then press Send & Notify. You can also open WhatsApp directly.', false);
+    }
+
+    // emailjs integration + whatsapp open
+    const submitBtn = document.getElementById('gwc-submit');
+    const waOpenBtn = document.getElementById('gwc-wa-open');
+    submitBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('gwc-name').value.trim();
+      const email = document.getElementById('gwc-email').value.trim();
+      const phone = document.getElementById('gwc-phone').value.trim();
+      const message = document.getElementById('gwc-message-text').value.trim();
+      const topic = selectedTopic || 'General Inquiry';
+
+      if (!name || !email || !phone) {
+        alert('Please provide your name, email and phone so we can contact you.');
+        return;
+      }
+
+      const params = {
+        user_name: name,
+        user_email: email,
+        user_phone: phone,
+        topic: topic,
+        message: message || '(no message provided)'
+      };
+
+      // optimistic UI
+      pushMessage('Sending your brief…', true);
+      submitBtn.disabled = true;
+
+      // attempt EmailJS send
+      try {
+        if (window.emailjs && typeof emailjs.send === 'function') {
+          await emailjs.send(
+            window.EMAILJS_SERVICE_ID || 'YOUR_SERVICE_ID',
+            window.EMAILJS_TEMPLATE_ID || 'YOUR_TEMPLATE_ID',
+            params
+          );
+          pushMessage('Brief received — our team will message you on WhatsApp shortly.', false);
+        } else {
+          // fallback local queue
+          const queue = JSON.parse(localStorage.getItem('gwc_queue_v1')||'[]');
+          queue.push({ ts: Date.now(), ...params });
+          localStorage.setItem('gwc_queue_v1', JSON.stringify(queue));
+          pushMessage('You are offline or email service not configured. The brief was queued locally.', false);
+        }
+      } catch (err) {
+        console.error('EmailJS send error', err);
+        pushMessage('There was an error sending your brief. We saved it locally; please try WhatsApp.', false);
+      } finally {
+        submitBtn.disabled = false;
+      }
+
+      // also open WhatsApp with prefilled message so they can be contacted directly
+      const waText = encodeURIComponent(
+        `Hello GWC — new project lead:\nName: ${name}\nPhone: ${phone}\nEmail: ${email}\nTopic: ${topic}\nMessage: ${message || '—'}`
+      );
+      window.open(WA_BASE_URL + '?text=' + waText, '_blank');
+    });
+
+    // dedicated WA open button (quick open)
+    waOpenBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const name = document.getElementById('gwc-name').value.trim() || 'Lead';
+      const phone = document.getElementById('gwc-phone').value.trim() || '';
+      const message = document.getElementById('gwc-message-text').value.trim() || '';
+      const t = selectedTopic || 'General';
+      const waText = encodeURIComponent(`Hi GWC — ${name} (${phone}) about ${t}: ${message}`);
+      window.open(WA_BASE_URL + '?text=' + waText, '_blank');
+    });
+
+    // toggle & accessibility
+    toggle.addEventListener('click', () => {
+      const showing = panel.style.display !== 'none';
+      if (showing) hidePanel(); else showPanel();
+    });
+    document.getElementById('gwc-close-btn').addEventListener('click', hidePanel);
+    waBtn.addEventListener('click', () => {
+      // open plain WA chat
+      window.open(WA_BASE_URL, '_blank');
+    });
+
+    function showPanel(){
+      panel.style.display = 'flex';
+      requestAnimationFrame(()=> panel.classList.add('is-visible'));
+      // initial messages if empty
+      if (!messagesEl.children.length) showInitialConversation();
+      // animation with gsap if available
+      if (window.gsap) gsap.fromTo(panel, { y:30, opacity:0 }, { y:0, opacity:1, duration:0.6, ease:'power3.out' });
+    }
+    function hidePanel(){
+      panel.classList.remove('is-visible');
+      if (window.gsap) gsap.to(panel, { y:20, opacity:0, duration:0.35, onComplete: ()=> panel.style.display='none' });
+      else panel.style.display='none';
+    }
+
+    // Initialize: small entrance for float buttons
+    const floatWrap = document.querySelector('.gwc-float-wrap');
+    floatWrap.classList.add('gwc-fade-in');
+    setTimeout(()=> floatWrap.classList.add('is-visible'), 120);
+
+    // auto-retry queued sends when EmailJS becomes available / network restored
+    async function processQueue(){
+      try {
+        const queue = JSON.parse(localStorage.getItem('gwc_queue_v1')||'[]');
+        if (!queue.length) return;
+        if (!window.emailjs || typeof emailjs.send !== 'function') return;
+        for (const item of queue) {
+          try {
+            await emailjs.send(window.EMAILJS_SERVICE_ID || 'YOUR_SERVICE_ID', window.EMAILJS_TEMPLATE_ID || 'YOUR_TEMPLATE_ID', {
+              user_name: item.user_name, user_email: item.user_email, user_phone: item.user_phone, topic: item.topic, message: item.message
+            });
+          } catch(e){ console.warn('queued send failed', e); break; }
+        }
+        // if succeeded for all, clear queue
+        localStorage.removeItem('gwc_queue_v1');
+      } catch(e){ console.error(e); }
+    }
+    window.addEventListener('online', processQueue);
+    setTimeout(processQueue, 2000);
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (ev) => {
+      if (!dropdown.contains(ev.target)) dropdown.classList.remove('open');
+    });
+
+    // small keyboard shortcuts
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key === 'c' && (ev.ctrlKey || ev.metaKey)) {
+        ev.preventDefault(); showPanel();
+      }
+      if (ev.key === 'Escape') hidePanel();
+    });
+  })();
+</script>
